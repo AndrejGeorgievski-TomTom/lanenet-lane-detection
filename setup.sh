@@ -17,10 +17,13 @@ HAS_PYTHON_36=$(echo ${PYTHON3_VERSION_INSTALLED} | grep "^3.6" | wc -l)
 if [ ${HAS_PYTHON_36} -gt 0 ]; then
     echo "Python ${PYTHON3_VERSION_INSTALLED} found. Installing Python requirements..."
     python3 -m pip install -r reqirements.txt
-    echo "Environment setup done."
 else
     echo "Python 3.6 not found! Can't proceed with the requirements installation."
     echo "Please proceed with python dependency installation one by one,"
     echo "since package version compatibility can't be guaranteed between Python versions."
 fi
 
+echo "Adding the repository root to the PYTHONPATH..."
+export PYTHONPATH="${PYTHONPATH}:${PWD}"
+
+echo "Environment setup done."
