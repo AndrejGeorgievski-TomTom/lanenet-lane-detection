@@ -1,6 +1,8 @@
 # Folders
 venv*
 .idea/
+model_weights/
+log/
 
 # Filetypes
 *.pyc
