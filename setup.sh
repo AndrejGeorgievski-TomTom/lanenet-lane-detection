@@ -28,3 +28,11 @@ echo "Adding the repository root to the PYTHONPATH..."
 export PYTHONPATH="${PYTHONPATH}:${PWD}"
 
 echo "Environment setup done."
+echo
+echo "Run a single-image inference test:"
+echo "    python3 tools/test_lanenet.py --weights_path model_weights/bisenetv2_lanenet_model_weights//tusimple_lanenet.ckpt --image_path /PATH/TO/AN/IMAGE"
+echo
+echo "Run inference on a folder of images and save the results:"
+echo "    python3 tools/process_images.py PATH/TO/IMG/DIR model_weights/bisenetv2_lanenet_model_weights/tusimple_lanenet.ckpt"
+echo "        * use --debug to the command output to get visualizations of the NN predictions for debugging purposes."
+echo
