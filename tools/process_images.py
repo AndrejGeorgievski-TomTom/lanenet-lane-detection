@@ -16,6 +16,8 @@ from lanenet_model import lanenet
 from local_utils.config_utils import parse_config_utils
 from local_utils.log_util import init_logger
 
+from lane_embeddings_cleanup import lane_markings_from_embeddings_cleanup
+
 CFG = parse_config_utils.lanenet_cfg
 LOG = init_logger.get_logger(log_file_name_prefix='lanenet_process_images')
 
@@ -27,6 +29,34 @@ def init_args():
     parser.add_argument('--debug', action="store_true", help='Display debugging output')
 
     return parser.parse_args()
+
+
+def plot_grid_images(content, rows=1, cols=1, titles="Element {item}/{count}"):
+    elem_count = len(content)
+    if elem_count > 1 and rows == cols == 1:
+        rows = 2 + elem_count % 2
+        cols = elem_count // 2
+    figure, axs = plt.subplots(rows, cols)
+    for i in range(elem_count):
+        row = i // cols
+        col = (i - cols * row)
+        axs[row, col].imshow(content[i])
+        axs[row, col].set_title(titles.format(item=i + 1, count=elem_count))
+    plt.show()
+
+
+def save_image_with_suffix_in_folder(image,
+                                     image_filepath: str, subfolder_paths: str = "",
+                                     image_filename_suffix: str = "",
+                                     string_mappings: dict = dict(),
+                                     ):
+    resolved_image_filepath = Path(image_filepath).resolve()
+    image_filename = resolved_image_filepath.stem + image_filename_suffix.format(**string_mappings) + \
+        resolved_image_filepath.suffix
+    saved_path = resolved_image_filepath.parent / subfolder_paths / image_filename
+    if not ops.exists(saved_path.parent):
+        os.mkdir(saved_path.parent)
+    cv2.imwrite(str(saved_path), image)
 
 
 def minmax_scale(input_arr):
@@ -148,7 +178,7 @@ def run_lanenet(images_folder, weights_path, debug=False):
 
                     for i in range(CFG.MODEL.EMBEDDING_FEATS_DIMS):
                         instance_seg_images[nn_res_index][:, :, i] = minmax_scale(
-                                                                        instance_seg_images[nn_res_index][:, :, i])
+                            instance_seg_images[nn_res_index][:, :, i])
                     embedding_image = np.array(instance_seg_images[nn_res_index], np.uint8)
 
                     # TODO: Let users choose whether the output resolution is kept as-is
@@ -159,10 +189,10 @@ def run_lanenet(images_folder, weights_path, debug=False):
                     embeddings_as_separate_images_scaled_to_input_dims = list()
                     for i in range(CFG.MODEL.EMBEDDING_FEATS_DIMS):
                         laneline_embedding = np.dstack((
-                                                        instance_seg_images[nn_res_index][:, :, i],
-                                                        instance_seg_images[nn_res_index][:, :, i],
-                                                        instance_seg_images[nn_res_index][:, :, i]
-                                                        )).astype(np.uint8)
+                            instance_seg_images[nn_res_index][:, :, i],
+                            instance_seg_images[nn_res_index][:, :, i],
+                            instance_seg_images[nn_res_index][:, :, i]
+                        )).astype(np.uint8)
                         embeddings_as_separate_images.append(laneline_embedding)
 
                         # TODO: Make sure you add sufficient padding around the image so that the dimensions fit!
@@ -172,33 +202,69 @@ def run_lanenet(images_folder, weights_path, debug=False):
                                        interpolation=cv2.INTER_LINEAR)
                         )
                     if debug and current_image_filepath is not "":
-                        figure, axs = plt.subplots(2,2)
-                        axs[0, 0].imshow(embeddings_as_separate_images[0])
-                        axs[0, 0].set_title("Lane segmentation image for lane {lane}/{count}, grayscale".format(
-                                                                                lane=1,
-                                                                                count=CFG.MODEL.EMBEDDING_FEATS_DIMS))
-                        axs[0, 1].imshow(embeddings_as_separate_images[1])
-                        axs[0, 1].set_title("Lane segmentation image for lane {lane}/{count}, grayscale".format(
-                                                                                lane=2,
-                                                                                count=CFG.MODEL.EMBEDDING_FEATS_DIMS))
-                        axs[1, 0].imshow(embeddings_as_separate_images[2])
-                        axs[1, 0].set_title("Lane segmentation image for lane {lane}/{count}, grayscale".format(
-                                                                                lane=3,
-                                                                                count=CFG.MODEL.EMBEDDING_FEATS_DIMS))
-                        axs[1, 1].imshow(embeddings_as_separate_images[3])
-                        axs[1, 1].set_title("Lane segmentation image for lane {lane}/{count}, grayscale".format(
-                                                                                lane=4,
-                                                                                count=CFG.MODEL.EMBEDDING_FEATS_DIMS))
-                        plt.show()
+                        plot_grid_images(content=embeddings_as_separate_images, rows=2, cols=2,
+                                         titles="Lane segmentation image for lane {item}/{count}, grayscale")
 
-                    # TODO: Make sure you add sufficient padding around the image so that the dimensions fit!
+                        embedding_as_triplets_bgr = [
+                            np.dstack((
+                                instance_seg_images[nn_res_index][:, :, 0],
+                                instance_seg_images[nn_res_index][:, :, 1],
+                                instance_seg_images[nn_res_index][:, :, 2]
+                            )).astype(np.uint8),
+                            np.dstack((
+                                instance_seg_images[nn_res_index][:, :, 0],
+                                instance_seg_images[nn_res_index][:, :, 1],
+                                instance_seg_images[nn_res_index][:, :, 3],
+                            )).astype(np.uint8),
+                            np.dstack((
+                                instance_seg_images[nn_res_index][:, :, 0],
+                                instance_seg_images[nn_res_index][:, :, 2],
+                                instance_seg_images[nn_res_index][:, :, 3],
+                            )).astype(np.uint8),
+                            np.dstack((
+                                instance_seg_images[nn_res_index][:, :, 1],
+                                instance_seg_images[nn_res_index][:, :, 2],
+                                instance_seg_images[nn_res_index][:, :, 3],
+                            )).astype(np.uint8),
+                        ]
+                        for item in range(len(embedding_as_triplets_bgr)):
+                            save_image_with_suffix_in_folder(embedding_as_triplets_bgr[item],
+                                                             image_filepath=current_image_filepath,
+                                                             subfolder_paths="debug_embeddings_rgb",
+                                                             image_filename_suffix="_embedding_{i}",
+                                                             string_mappings={"i": item}
+                                                             )
+                        plot_grid_images(content=embedding_as_triplets_bgr,
+                                         titles="Pairs of embeddings as RGB, pair {item}/{count}")
+
+                    instance_segmentation_fused_output_rgb = np.dstack((
+                        instance_seg_images[nn_res_index][:, :, 2],
+                        instance_seg_images[nn_res_index][:, :, 1],
+                        instance_seg_images[nn_res_index][:, :, 0]
+                    )).astype(np.uint8)
+
                     binary_color = np.dstack((binary_seg_images[nn_res_index] * 255,
                                               binary_seg_images[nn_res_index] * 255,
                                               binary_seg_images[nn_res_index] * 255)).astype(np.uint8)
-                    scaled_binary_output = cv2.resize(binary_color, (batch_images_vis[nn_res_index].shape[1],
-                                                                     batch_images_vis[nn_res_index].shape[0]),
-                                                      interpolation=cv2.INTER_LINEAR)
-
+                    instance_segmentation_color_for_visualization = cv2.cvtColor(
+                        lane_markings_from_embeddings_cleanup(instance_segmentation_fused_output_rgb),
+                        cv2.COLOR_RGB2BGR)
+                    scaled_output_for_visualization = cv2.resize(instance_segmentation_color_for_visualization,
+                                                                 (batch_images_vis[nn_res_index].shape[1],
+                                                                  batch_images_vis[nn_res_index].shape[0]),
+                                                                 interpolation=cv2.INTER_LINEAR)
+                    scaled_binary_output_for_visualization = cv2.resize(binary_color,
+                                                                        (batch_images_vis[nn_res_index].shape[1],
+                                                                         batch_images_vis[nn_res_index].shape[0]),
+                                                                        interpolation=cv2.INTER_LINEAR)
+                    binary_additive_mask_1 = scaled_output_for_visualization > 0
+                    # binary_additive_mask_1 = scaled_output_for_visualization[:, :, 0] > 0
+                    # binary_additive_mask_2 = scaled_output_for_visualization[:, :, 1] > 0
+                    # binary_additive_mask_3 = scaled_output_for_visualization[:, :, 2] > 0
+                    binary_additive_mask_4 = scaled_binary_output_for_visualization > 0
+                    binary_additive_mask = np.logical_not(binary_additive_mask_1) & \
+                                           (scaled_binary_output_for_visualization > 0)
+                    scaled_output_for_visualization[binary_additive_mask] = 255
                     if debug and current_image_filepath is not "":
                         plt.title("Binary segmentation image")
                         plt.imshow(binary_color)
@@ -207,14 +273,14 @@ def run_lanenet(images_folder, weights_path, debug=False):
                     # Rescale the masks and plot on top of the input images
                     result_image_vis = batch_images_originals[nn_res_index]
                     binary_detection_overlay = cv2.addWeighted(batch_images_vis[nn_res_index], 0.75,
-                                                               scaled_binary_output, 0.25, 0)
+                                                               scaled_output_for_visualization, 0.25, 0)
                     result_image_vis[ver_start_crop:ver_end_crop,
                                      hor_start_crop:hor_end_crop] = binary_detection_overlay
                     result_image_vis = cv2.rectangle(result_image_vis, (hor_start_crop, ver_start_crop),
                                                      (hor_end_crop, ver_end_crop),
                                                      (255, 255, 255), 3, cv2.LINE_4)
-                    scale_factor = 1.25
-                    scaled_embeddings_output = cv2.resize(embedding_image[:, :, (0, 1, 2)],
+                    scale_factor = 1.5
+                    scaled_embeddings_output = cv2.resize(instance_segmentation_color_for_visualization,
                                                           (int(embedding_image.shape[1] * scale_factor),
                                                            int(embedding_image.shape[0] * scale_factor)),
                                                           interpolation=cv2.INTER_LINEAR)
@@ -226,6 +292,7 @@ def run_lanenet(images_folder, weights_path, debug=False):
                     result_image_vis[scaled_embeddings_output.shape[0]:scaled_embeddings_output.shape[0] +
                                      scaled_binary_color_output.shape[0],
                                      0:scaled_binary_color_output.shape[1]] = scaled_binary_color_output
+
                     if debug and current_image_filepath is not "":
                         plt.title("Resulting image, visualized")
                         plt.imshow(result_image_vis[:, :, (2, 1, 0)])  # Lazy BGR2RGB
@@ -233,30 +300,31 @@ def run_lanenet(images_folder, weights_path, debug=False):
 
                     # Create and save the input image - mind the batch padding!
                     if current_image_filepath is not "":
-                        resolved_image_filepath = Path(current_image_filepath).resolve()
-
-                        binary_seg_image_filename = resolved_image_filepath.stem + \
-                                                   "_binary_mask{suffix}".format(suffix=resolved_image_filepath.suffix)
-                        saved_path = resolved_image_filepath.parent/"binary_segmentation"/binary_seg_image_filename
-                        if not ops.exists(saved_path.parent):
-                            os.mkdir(saved_path.parent)
-                        cv2.imwrite(str(saved_path), binary_color)
+                        save_image_with_suffix_in_folder(binary_color,
+                                                         image_filepath=current_image_filepath,
+                                                         subfolder_paths="binary_segmentation",
+                                                         image_filename_suffix="_binary_mask"
+                                                         )
                         # Save embeddings as separate images
-                        for current_embedding_no in range(CFG.MODEL.EMBEDDING_FEATS_DIMS):
-                            embedding_image_filename = resolved_image_filepath.stem + \
-                                                       "_embedding_{i}{suffix}".format(i=current_embedding_no,
-                                                                                        suffix=resolved_image_filepath.suffix)
-                            saved_path = resolved_image_filepath.parent/"lane_segmentation"/embedding_image_filename
-                            if not ops.exists(saved_path.parent):
-                                os.mkdir(saved_path.parent)
-                            cv2.imwrite(str(saved_path), embeddings_as_separate_images[current_embedding_no])
+                        if debug:
+                            for current_embedding_no in range(CFG.MODEL.EMBEDDING_FEATS_DIMS):
+                                save_image_with_suffix_in_folder(embeddings_as_separate_images[current_embedding_no],
+                                                                 image_filepath=current_image_filepath,
+                                                                 subfolder_paths="lane_segmentation",
+                                                                 image_filename_suffix="_embedding_{i}",
+                                                                 string_mappings={"i": current_embedding_no}
+                                                                 )
+                        save_image_with_suffix_in_folder(instance_segmentation_color_for_visualization,
+                                                         image_filepath=current_image_filepath,
+                                                         subfolder_paths="lane_segmentation",
+                                                         image_filename_suffix="_lanes_instance_segmentation_mask"
+                                                         )
                         # Save visualization image
-                        visualization_image_filename = resolved_image_filepath.stem + \
-                                                   "_visualized{suffix}".format(suffix=resolved_image_filepath.suffix)
-                        saved_path = resolved_image_filepath.parent/"visualized"/visualization_image_filename
-                        if not ops.exists(saved_path.parent):
-                            os.mkdir(saved_path.parent)
-                        cv2.imwrite(str(saved_path), result_image_vis)
+                        save_image_with_suffix_in_folder(result_image_vis,
+                                                         image_filepath=current_image_filepath,
+                                                         subfolder_paths="visualized",
+                                                         image_filename_suffix="_visualized"
+                                                         )
                 # END NN POSTPROCESSING LOOP ######################################
                 if len(images_paths) > inference_batch_size:
                     images_paths = images_paths[inference_batch_size:]
